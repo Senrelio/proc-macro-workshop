@@ -60,7 +60,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
             },
             (true, true) => unimplemented!(),
             (false, false) => quote! {
-                #f_name: self.#f_name.unwrap()
+                #f_name: self.#f_name.ok_or("field cannot be none")?
             },
             (false, true) => quote! {
                 #f_name: self.#f_name
@@ -75,18 +75,18 @@ pub fn derive(input: TokenStream) -> TokenStream {
         let is_vec = is_vec(ty);
         match (is_option, is_vec) {
             (Some(t), None) => quote! {
-                fn #f_name(&mut self, #f_name: #t) {
+                pub fn #f_name(&mut self, #f_name: #t) {
                     self.#f_name = #f_name;
                 }
             },
             (Some(_), Some(_)) => unimplemented!(),
             (None, None) => quote! {
-                fn #f_name(&mut self, #f_name: #ty) {
+                pub fn #f_name(&mut self, #f_name: #ty) {
                     self.#f_name = Some(#f_name);
                 }
             },
             (None, Some(_)) => quote! {
-                fn #f_name(&mut self, #f_name: #ty) {
+                pub fn #f_name(&mut self, #f_name: #ty) {
                     self.#f_name = #f_name;
                 }
             },
@@ -95,7 +95,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
     let expand = quote! {
         impl #name {
-            fn builder() -> #b_name {
+            pub fn builder() -> #b_name {
                 #b_name {
                     #(
                         #b_init
@@ -103,18 +103,18 @@ pub fn derive(input: TokenStream) -> TokenStream {
                 }
             }
         }
-        struct #b_name {
+        pub struct #b_name {
             #(
                 #b_fields
             ),*
         }
         impl #b_name {
-            fn build(self) -> #name {
-                #name {
+            pub fn build(self) -> Result<#name, String> {
+                Ok(#name {
                     #(
                         #extract
                     ),*
-                }
+                })
             }
             #(
                 #b_methods
