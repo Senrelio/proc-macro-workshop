@@ -4,7 +4,7 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{parse_macro_input, DeriveInput, Type};
 
-#[proc_macro_derive(Builder)]
+#[proc_macro_derive(Builder, attributes(builder))]
 pub fn derive(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
     let name = ast.ident;
@@ -30,7 +30,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
             }
             false => {
                 quote! {
-                    #f_name: Option<#ty>
+                    #f_name: std::option::Option<#ty>
                 }
             }
         }
@@ -76,23 +76,45 @@ pub fn derive(input: TokenStream) -> TokenStream {
         match (is_option, is_vec) {
             (Some(t), None) => quote! {
                 pub fn #f_name(&mut self, #f_name: #t) -> &mut Self {
-                    self.#f_name = Some(#f_name);
+                    self.#f_name = std::option::Option::Some(#f_name);
                     self
                 }
             },
             (Some(_), Some(_)) => unimplemented!(),
             (None, None) => quote! {
                 pub fn #f_name(&mut self, #f_name: #ty) -> &mut Self {
-                    self.#f_name = Some(#f_name);
+                    self.#f_name = std::option::Option::Some(#f_name);
                     self
                 }
             },
-            (None, Some(_)) => quote! {
-                pub fn #f_name(&mut self, #f_name: #ty) -> &mut Self {
-                    self.#f_name = #f_name;
-                    self
+            (None, Some(_)) => {
+                let attrs = &f.attrs;
+                {
+                    let need_extend = attrs.len() == 1
+                        && attrs[0].path.segments.len() == 1
+                        && attrs[0].path.segments[0].ident == "builder";
+                    if need_extend {
+                        let each_append = handle_builder_attribute(&attrs[0], f);
+                        if let Ok(a) = each_append {
+                            quote! {
+                                #a
+                            }
+                        } else {
+                            each_append.unwrap_err().to_compile_error()
+                        }
+                    } else {
+                        let common = quote! {
+                            pub fn #f_name(&mut self, #f_name: #ty) -> &mut Self {
+                                self.#f_name = #f_name;
+                                self
+                            }
+                        };
+                        quote! {
+                            #common
+                        }
+                    }
                 }
-            },
+            }
         }
     });
 
@@ -112,7 +134,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
             ),*
         }
         impl #b_name {
-            pub fn build(&self) -> Result<#name, String> {
+            pub fn build(&self) -> std::result::Result<#name, String> {
                 Ok(#name {
                     #(
                         #extract
@@ -125,6 +147,53 @@ pub fn derive(input: TokenStream) -> TokenStream {
         }
     };
     expand.into()
+}
+
+fn handle_builder_attribute(
+    attr: &syn::Attribute,
+    f: &syn::Field,
+) -> Result<proc_macro2::TokenStream, syn::Error> {
+    let name = &f.ident;
+    let ty = &f.ty;
+    // assert!(is_vec(ty).is_some(), "builder attribute has to be applied to vec type fields");
+    let inner_ty = is_vec(ty).ok_or_else(|| syn::Error::new(
+        name.clone().unwrap().span(),
+        "expected `each`",
+    ))?;
+    let meta_list = if let syn::Meta::List(meta_list) = attr.parse_meta().ok().ok_or_else(||
+        syn::Error::new(name.clone().unwrap().span(), "expected `each`"),
+    )? {
+        meta_list
+    } else {
+        unimplemented!()
+    };
+    assert_eq!(meta_list.path.segments.len(), 1);
+    assert_eq!(meta_list.path.segments[0].ident, "builder");
+    assert_eq!(meta_list.nested.len(), 1);
+    let kv_pair = if let syn::NestedMeta::Meta(syn::Meta::NameValue(kv_pair)) = &meta_list.nested[0]
+    {
+        if kv_pair.path.segments[0].ident != "each" {
+            return Err(syn::Error::new_spanned(
+                meta_list,
+                "expected `builder(each = \"...\")`",
+            ));
+        }
+        kv_pair
+    } else {
+        unimplemented!()
+    };
+    let arg = if let syn::Lit::Str(arg) = &kv_pair.lit {
+        arg
+    } else {
+        unimplemented!()
+    };
+    let arg = syn::Ident::new(&arg.value(), arg.span());
+    Ok(quote! {
+        fn #arg(&mut self, #arg: #inner_ty) -> &mut Self {
+            self.#name.push(#arg);
+            self
+        }
+    })
 }
 
 fn is_option(ty: &Type) -> Option<&Type> {
@@ -195,6 +264,11 @@ fn is_vec(ty: &Type) -> Option<&Type> {
     } else {
         unimplemented!()
     }
+}
+
+#[proc_macro_derive(HelperAttr, attributes(builder))]
+pub fn builder_helper_attr(_item: TokenStream) -> TokenStream {
+    TokenStream::new()
 }
 
 // struct User {
