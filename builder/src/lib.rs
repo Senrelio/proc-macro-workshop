@@ -156,6 +156,7 @@ fn handle_builder_attribute(
     let name = &f.ident;
     let ty = &f.ty;
     // assert!(is_vec(ty).is_some(), "builder attribute has to be applied to vec type fields");
+<<<<<<< HEAD
     let inner_ty = is_vec(ty)
         .ok_or_else(|| syn::Error::new(name.clone().unwrap().span(), "expected `each`"))?;
     let meta_list = if let syn::Meta::List(meta_list) = attr
@@ -163,6 +164,15 @@ fn handle_builder_attribute(
         .ok()
         .ok_or_else(|| syn::Error::new(name.clone().unwrap().span(), "expected `each`"))?
     {
+=======
+    let inner_ty = is_vec(ty).ok_or_else(|| syn::Error::new(
+        name.clone().unwrap().span(),
+        "expected `each`",
+    ))?;
+    let meta_list = if let syn::Meta::List(meta_list) = attr.parse_meta().ok().ok_or_else(||
+        syn::Error::new(name.clone().unwrap().span(), "expected `each`"),
+    )? {
+>>>>>>> 17a1051f9baea59a0dfc93c03b7290e0d5671c45
         meta_list
     } else {
         unimplemented!()
